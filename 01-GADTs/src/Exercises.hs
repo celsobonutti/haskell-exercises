@@ -1,3 +1,4 @@
+{-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -320,11 +321,11 @@ foldValues (ACons x xs) = let (b, a) = foldValues xs in (x <> a, b)
 -- our expression is well-formed.
 
 data Expr a where
-  Equals    :: Expr Int  -> Expr Int            -> Expr Bool
-  Add       :: Expr Int  -> Expr Int            -> Expr Int
-  If        :: Expr Bool -> Expr a   -> Expr a  -> Expr a
-  IntValue  :: Int                              -> Expr Int
-  BoolValue :: Bool                             -> Expr Bool
+  Equals    :: Expr Int  -> Expr Int             -> Expr Bool
+  Add       :: Expr Int  -> Expr Int             -> Expr Int
+  If        :: Expr Bool -> Expr a   -> Expr a   -> Expr a
+  IntValue  :: Int                               -> Expr Int
+  BoolValue :: Bool                              -> Expr Bool
 
 -- | a. Implement the following function and marvel at the typechecker:
 
@@ -351,6 +352,18 @@ data Typed where
   BoolType :: Expr Bool -> Typed
 
 parse :: DirtyExpr -> Maybe Typed
+parse (DirtyBoolValue bool) = Just . BoolType . BoolValue $ bool
+parse (DirtyIntValue int) = Just . IntType . IntValue $ int
+parse (DirtyEquals (parse -> Just (IntType x)) (parse -> Just (IntType y))) = Just . BoolType $ Equals x y
+parse (DirtyAdd (parse -> Just (IntType x)) (parse -> Just (IntType y))) = Just . IntType $ Add  x y
+parse (DirtyIf
+       (parse -> Just (BoolType predicate))
+       (parse -> Just consequent)
+       (parse -> Just alternative)) = case (consequent, alternative) of
+                                        (IntType c, IntType a) -> Just . IntType $ If predicate c a
+                                        (BoolType c, BoolType a) -> Just . BoolType $ If predicate c a
+                                        _ -> Nothing
+parse _ = Nothing
 
 -- | c. Can we add functions to our 'Expr' language? If not, why not? What
 -- other constructs would we need to add? Could we still avoid 'Maybe' in the
@@ -371,13 +384,27 @@ parse :: DirtyExpr -> Maybe Typed
 -- long as the input of one lines up with the output of the next.
 
 data TypeAlignedList a b where
-  -- ...
+  Id :: TypeAlignedList a a
+  Cons :: (a -> b) -> TypeAlignedList b c -> TypeAlignedList a c
+
+infixr 9 :>
+
+pattern (:>) :: (a -> b) -> TypeAlignedList b c -> TypeAlignedList a c
+pattern f :> fs <- Cons f fs where
+  f :> fs = Cons f fs
+
+{-# COMPLETE (:>), Id #-}
+
+test :: TypeAlignedList Int Bool
+test = (+ 5) :> show :> (== "10") :> Id
 
 -- | b. Which types are existential?
+-- Every type besides the input of the first function
+-- and the output of the last one
 
 -- | c. Write a function to append type-aligned lists. This is almost certainly
 -- not as difficult as you'd initially think.
 
 composeTALs :: TypeAlignedList b c -> TypeAlignedList a b -> TypeAlignedList a c
-composeTALs = error "Implement me, and then celebrate!"
-
+composeTALs tal Id = tal
+composeTALs tal (hd :> tl) = hd :> composeTALs tal tl
