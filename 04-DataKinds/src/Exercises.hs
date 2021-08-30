@@ -1,9 +1,11 @@
 {-# LANGUAGE DataKinds      #-}
+{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE GADTs          #-}
 {-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE FlexibleInstances #-}
 module Exercises where
 
-import Data.Kind (Type)
+import Data.Kind (Type, Constraint)
 import Data.Function ((&))
 
 
@@ -21,10 +23,18 @@ data IntegerMonoid = Sum | Product
 -- | a. Write a newtype around 'Integer' that lets us choose which instance we
 -- want.
 
+newtype I (monoid :: IntegerMonoid) =
+  I Integer
+
 -- | b. Write the two monoid instances for 'Integer'.
+instance Semigroup (I Product) where
+  (I x) <> (I y) = I (x * y)
+
+instance Semigroup (I Sum) where
+  (I x) <> (I y) = I (x + y)
 
 -- | c. Why do we need @FlexibleInstances@ to do this?
-
+-- Because in `I Sum`, `Sum` is a non-variable type parameter.
 
 
 
@@ -38,14 +48,14 @@ data Void -- No constructors!
 
 -- | a. If we promote this with DataKinds, can we produce any /types/ of kind
 -- 'Void'?
+-- Nope. Since it doesn't have any values, it cannot have any types of its kind.
 
 -- | b. What are the possible type-level values of kind 'Maybe Void'?
+-- Nothing
 
 -- | c. Considering 'Maybe Void', and similar examples of kinds such as
 -- 'Either Void Bool', why do you think 'Void' might be a useful kind?
-
-
-
+-- It could be useful to represent operations that could never fail.
 
 
 {- THREE -}
@@ -57,14 +67,26 @@ data Void -- No constructors!
 data Nat = Z | S Nat
 
 data StringAndIntList (stringCount :: Nat) where
+  SINil :: StringAndIntList Z
+  SIConsInt :: Int -> StringAndIntList count -> StringAndIntList count
+  SIConsStr :: String -> StringAndIntList count -> StringAndIntList (S count)
   -- ...
 
 -- | b. Update it to keep track of the count of strings /and/ integers.
 
+data StringAndIntList' (stringCount :: Nat) where
+  SINil' :: StringAndIntList' Z
+  SIConsInt' :: Int -> StringAndIntList' count -> StringAndIntList' (S count)
+  SIConsStr' :: String -> StringAndIntList' count -> StringAndIntList' (S count)
 -- | c. What would be the type of the 'head' function?
 
+data Element where
+  Int :: Int -> Element
+  String :: String -> Element
 
-
+strAndIntHead :: StringAndIntList' (S nat) -> Element
+strAndIntHead (SIConsInt' x _) = Int x
+strAndIntHead (SIConsStr' s _) = String s
 
 
 {- FOUR -}
@@ -79,15 +101,22 @@ data Showable where
 -- stores this fact in the type-level.
 
 data MaybeShowable (isShowable :: Bool) where
+  JustShowable :: Show a => a -> MaybeShowable True
+  NotShowable :: a -> MaybeShowable False
   -- ...
 
 -- | b. Write a 'Show' instance for 'MaybeShowable'. Your instance should not
 -- work unless the type is actually 'show'able.
+instance Show (MaybeShowable True) where
+  show a = show a
 
 -- | c. What if we wanted to generalise this to @Constrainable@, such that it
 -- would work for any user-supplied constraint of kind 'Constraint'? How would
 -- the type change? What would the constructor look like? Try to build this
 -- type - GHC should tell you exactly which extension you're missing.
+
+data Constrainable (constraint :: Constraint) where
+  Constrainable :: constraint c => c -> Constrainable (constraint c)
 
 
 
@@ -105,16 +134,20 @@ data List a = Nil | Cons a (List a)
 -- having a list of types!
 
 data HList (types :: List Type) where
+  HNill :: HList Nil
+  HCons :: a -> HList types -> HList (Cons a types)
   -- HNil  :: ...
   -- HCons :: ...
 
 -- | b. Write a well-typed, 'Maybe'-less implementation for the 'tail' function
 -- on 'HList'.
 
+hTail :: HList (Cons a as) -> HList as
+hTail (HCons _ xs) = xs
+
 -- | c. Could we write the 'take' function? What would its type be? What would
 -- get in our way?
-
-
+-- We can't get from just an Int how many types are remaining to be collected from the HList
 
 
 
@@ -122,11 +155,16 @@ data HList (types :: List Type) where
 
 -- | Here's a boring data type:
 
-data BlogAction
-  = AddBlog
-  | DeleteBlog
-  | AddComment
-  | DeleteComment
+data Role
+  = Admin
+  | Moderator
+  | Common
+
+data BlogAction (isAdmin :: Role) where
+  AddBlog :: BlogAction Common
+  DeleteBlog :: BlogAction Admin
+  AddComment :: BlogAction Common
+  DeleteComment :: BlogAction Moderator
 
 -- | a. Two of these actions, 'DeleteBlog' and 'DeleteComment', should be
 -- admin-only. Extend the 'BlogAction' type (perhaps with a GADT...) to
@@ -137,8 +175,9 @@ data BlogAction
 -- | b. Write a 'BlogAction' list type that requires all its members to be
 -- the same "access level": "admin" or "non-admin".
 
--- data BlogActionList (isSafe :: ???) where
---   ...
+data BlogActionList (isSafe :: Role) where
+  ActionNil :: BlogActionList rol
+  ActionCons :: BlogAction rol -> BlogActionList rol -> BlogActionList rol
 
 -- | c. Let's imagine that our requirements change, and 'DeleteComment' is now
 -- available to a third role: moderators. Could we use 'DataKinds' to introduce
@@ -166,14 +205,18 @@ data SBool (value :: Bool) where
 -- | a. Write a singleton type for natural numbers:
 
 data SNat (value :: Nat) where
+  SZero :: SNat Z
+  SSuc :: SNat x -> SNat (S x)
   -- ...
 
 -- | b. Write a function that extracts a vector's length at the type level:
 
-length :: Vector n a -> SNat n
-length = error "Implement me!"
+vLength :: Vector n a -> SNat n
+vLength VNil = SZero
+vLength (VCons _ xs) = SSuc . vLength $ xs
 
 -- | c. Is 'Proxy' a singleton type?
+-- No, because it has no values.
 
 data Proxy a = Proxy
 
@@ -187,21 +230,21 @@ data Proxy a = Proxy
 -- and write to a file. To do this, we might write a data type to express our
 -- intentions:
 
-data Program                     result
-  = OpenFile            (Program result)
-  | WriteFile  String   (Program result)
-  | ReadFile  (String -> Program result)
-  | CloseFile (          Program result)
-  | Exit                         result
+data Program                     result (open :: Bool) where
+   OpenFile ::  Program result False -> Program result True
+   WriteFile :: String -> Program result True ->   Program result True
+   ReadFile  :: (String -> Program result True)
+   CloseFile :: Program result True -> Program result False
+   Exit      :: Program result False -> Program result False
 
 -- | We could then write a program like this to use our language:
 
-myApp :: Program Bool
-myApp
-  = OpenFile $ WriteFile "HEY" $ (ReadFile $ \contents ->
-      if contents == "WHAT"
-        then WriteFile "... bug?" $ Exit False
-        else CloseFile            $ Exit True)
+-- myApp :: Program Bool False
+-- myApp
+--   = OpenFile $ WriteFile "HEY" ReadFile $ (\contents ->
+--       if contents == "WHAT"
+--         then WriteFile "... bug?" $ Exit False
+--         else CloseFile            $ Exit True)
 
 -- | ... but wait, there's a bug! If the contents of the file equal "WHAT", we
 -- forget to close the file! Ideally, we would like the compiler to help us: we
@@ -226,8 +269,8 @@ myApp
 -- | EXTRA: write an interpreter for this program. Nothing to do with data
 -- kinds, but a nice little problem.
 
-interpret :: Program {- ??? -} a -> IO a
-interpret = error "Implement me?"
+-- interpret :: Program {- ??? -} a -> IO a
+-- interpret = error "Implement me?"
 
 
 
@@ -249,11 +292,17 @@ data Vector (n :: Nat) (a :: Type) where
 -- into Z and S cases. That's all the hint you need :)
 
 data SmallerThan (limit :: Nat) where
-  -- ...
+  Zero :: SmallerThan (S Z)
+  SmallerThanN :: SmallerThan n -> SmallerThan (S n)
 
 -- | b. Write the '(!!)' function:
 
-(!!) :: Vector n a -> SmallerThan n -> a
-(!!) = error "Implement me!"
+(!!!) :: Vector (S n) a -> SmallerThan n -> a
+(!!!) (VCons x _) Zero = x
+(!!!) (VCons _ xs) (SmallerThanN n) = xs !!! n
 
 -- | c. Write a function that converts a @SmallerThan n@ into a 'Nat'.
+
+fromFin :: SmallerThan n -> Nat
+fromFin Zero = Z
+fromFin (SmallerThanN n) = S (fromFin n)
