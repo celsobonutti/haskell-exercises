@@ -7,9 +7,6 @@ module Exercises where
 import Data.Kind (Type)
 
 
-
-
-
 {- ONE -}
 
 -- | The following GADT creates a list of values of unknown types:
@@ -20,15 +17,16 @@ data Exlistential where
 
 -- | a. Write a function to "unpack" this exlistential into a list.
 
--- unpackExlistential :: Exlistential -> (forall a. a -> r) -> [r]
--- unpackExlistential = error "Implement me!"
+unpackExlistential :: Exlistential -> (forall a. a -> r) -> [r]
+unpackExlistential Nil _ = []
+unpackExlistential (Cons x xs) f = f x : unpackExlistential xs f
 
 -- | b. Regardless of which type @r@ actually is, what can we say about the
 -- values in the resulting list?
+-- They're all the same value, because the only function we can have is `const <something>`.
 
 -- | c. How do we "get back" knowledge about what's in the list? Can we?
-
-
+-- No, we can't. At least not with the current types.
 
 
 
@@ -42,14 +40,26 @@ data CanFold a where
 
 -- | a. The following function unpacks a 'CanFold'. What is its type?
 
--- unpackCanFold :: ???
--- unpackCanFold f (CanFold x) = f x
+unpackCanFold :: (forall f. Foldable f => f a -> r)  -> CanFold a -> r
+unpackCanFold f (CanFold x) = f x
 
 -- | b. Can we use 'unpackCanFold' to figure out if a 'CanFold' is "empty"?
 -- Could we write @length :: CanFold a -> Int@? If so, write it!
+isNull :: CanFold a -> Bool
+isNull = unpackCanFold null
+
+length' :: CanFold a -> Int
+length' = unpackCanFold length
+
+length'' :: CanFold a -> Int
+length'' = unpackCanFold (foldr (const (+ 1)) 0)
+
+isNull' :: CanFold a -> Bool
+isNull' = (== 0) . length''
 
 -- | c. Write a 'Foldable' instance for 'CanFold'. Don't overthink it.
-
+instance Foldable CanFold where
+  foldr f acc a = unpackCanFold (foldr f acc) a
 
 
 
@@ -63,16 +73,21 @@ data EqPair where
 
 -- | a. Write a function that "unpacks" an 'EqPair' by applying a user-supplied
 -- function to its pair of values in the existential type.
+unpackEqPair :: (forall a. Eq a => a -> a -> r) -> EqPair -> r
+unpackEqPair f (EqPair x y) = f x y
 
 -- | b. Write a function that takes a list of 'EqPair's and filters it
 -- according to some predicate on the unpacked values.
+filterEqPair :: (forall a. Eq a => a -> a -> Bool) -> [EqPair] -> [EqPair]
+filterEqPair f = filter (unpackEqPair f)
 
 -- | c. Write a function that unpacks /two/ 'EqPair's. Now that both our
 -- variables are in rank-2 position, can we compare values from different
 -- pairs?
+-- We can compair the combination of pairs, but not the values separately.#!/usr/bin/env bash
 
-
-
+unpackEqPairs :: (forall a. Eq a => a -> a -> r) -> EqPair -> EqPair -> (r, r)
+unpackEqPairs f xs ys = (unpackEqPair f xs, unpackEqPair f ys)
 
 
 {- FOUR -}
