@@ -2,6 +2,7 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE GADTs          #-}
 {-# LANGUAGE RankNTypes     #-}
+{-# LANGUAGE NamedFieldPuns #-}
 module Exercises where
 
 import Data.Kind (Type)
@@ -112,10 +113,12 @@ data Nested input output subinput suboutput
 -- | a. Write a GADT to existentialise @subinput@ and @suboutput@.
 
 data NestedX input output where
-  -- ...
+  NestedX :: Nested input output subinput suboutput -> NestedX input output
 
 -- | b. Write a function to "unpack" a NestedX. The user is going to have to
 -- deal with all possible @subinput@ and @suboutput@ types.
+unpackNestedX :: (forall subinput suboutput. Nested input output subinput suboutput -> r) -> NestedX input output -> r
+unpackNestedX f (NestedX x) = f x
 
 -- | c. Why might we want to existentialise the subtypes away? What do we lose
 -- by doing so? What do we gain?
@@ -149,18 +152,24 @@ data Text = Text String
 -- to render our DSL to an HTML string:
 class Renderable component where render :: component -> String
 
+
 -- | a. Write a type for the children.
+
+data Child where
+  Child :: Renderable a => a -> Child
+
+data HTML = HTML { properties :: (String, String), children :: [Child] }
 
 -- | b. What I'd really like to do when rendering is 'fmap' over the children
 -- with 'render'; what's stopping me? Fix it!
+
+instance Renderable Child where
+  render (Child x) = render x
 
 -- | c. Now that we're an established Haskell shop, we would /also/ like the
 -- option to render our HTML to a Shakespeare template to write to a file
 -- (http://hackage.haskell.org/package/shakespeare). How could we support this
 -- new requirement with minimal code changes?
-
-
-
 
 
 {- SIX -}
@@ -176,10 +185,25 @@ data MysteryBox a where
 -- | a. Knowing what we now know about RankNTypes, we can write an 'unwrap'
 -- function! Write the function, and don't be too upset if we need a 'Maybe'.
 
+unwrapMysteryBox :: (forall a r. a -> MysteryBox r) -> MysteryBox a -> Maybe (MysteryBox r)
+unwrapMysteryBox f EmptyBox = Nothing
+unwrapMysteryBox f (IntBox x _) = Just $ f x
+unwrapMysteryBox f (StringBox s _) = Just $ f s
+unwrapMysteryBox f (BoolBox b _) = Just $ f b
+
 -- | b. Why do we need a 'Maybe'? What can we still not know?
+-- EmptyBox cannot be unwrapped to anything
 
 -- | c. Write a function that uses 'unwrap' to print the name of the next
 -- layer's constructor.
+printNext :: (forall a r. a -> MysteryBox r) -> MysteryBox a -> IO ()
+printNext f box = print $ case unwrapMysteryBox f box of
+  Nothing -> "No next"
+  Just EmptyBox -> "EmptyBox"
+  Just (IntBox _ _) -> "IntBox"
+  Just (StringBox _ _) -> "StringBox"
+  Just (BoolBox _ _) -> "BoolBox"
+
 
 
 
@@ -214,7 +238,9 @@ toNat = error "You should already know this one ;)"
 -- | If you're looking for a property that you could use to test your function,
 -- remember that @fromNat x toNat === x@!
 
-
+fromNat :: Nat -> (forall a. SNat a -> r) -> r
+fromNat Z f = f SZ
+fromNat (S n) f = fromNat n (f . SS)
 
 
 
@@ -229,3 +255,7 @@ data Vector (n :: Nat) (a :: Type) where
 -- | It would be nice to have a 'filter' function for vectors, but there's a
 -- problem: we don't know at compile time what the new length of our vector
 -- will be... but has that ever stopped us? Make it so!
+
+vFilter :: (a -> Bool) -> Vector n a -> (forall m. Vector m a -> r) -> r
+vFilter f VNil g = g VNil
+vFilter f (VCons x xs) g = vFilter f xs (if f x then g . VCons x else g)
