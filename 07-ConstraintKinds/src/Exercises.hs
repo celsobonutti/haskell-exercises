@@ -6,6 +6,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE UndecidableInstances #-}
 module Exercises where -- ^ This is starting to look impressive, right?
 
 import Data.Kind (Constraint, Type)
@@ -33,14 +34,17 @@ data List a = Nil | Cons a (List a)
 -- | a. Do it! Think about the @Nil@ and @Cons@ cases separately; which
 -- constraints can the @Nil@ case satisfy?
 
-data ConstrainedList (c :: Type -> Constraint) where
+data ConstrainedList (constraint :: Type -> Constraint) where
+  CNil :: ConstrainedList constraint
+  CCons :: constraint a => a -> ConstrainedList constraint -> ConstrainedList constraint
   -- IMPLEMENT ME
 
 -- | b. Using what we know about RankNTypes, write a function to fold a
 -- constrained list. Note that we'll need a folding function that works /for
 -- all/ types who implement some constraint @c@. Wink wink, nudge nudge.
-
--- foldConstrainedList :: ???
+foldConstrainedList :: (forall a. c a => (a -> b -> b)) -> b -> ConstrainedList c -> b
+foldConstrainedList _ b CNil = b
+foldConstrainedList f b (CCons x xs) = foldConstrainedList f (f x b) xs
 
 -- | Often, I'll want to constrain a list by /multiple/ things. The problem is
 -- that I can't directly write multiple constraints into my type, because the
@@ -54,12 +58,12 @@ data ConstrainedList (c :: Type -> Constraint) where
 -- combines `Monoid a` and `Show a`. What other extension did you need to
 -- enable? Why?
 
--- class ??? => Constraints a
--- instance ??? => Constraints a
+class (Monoid a, Show a) => Constraints a
+instance (Monoid a, Show a) => Constraints a
 
 -- | What can we now do with this constrained list that we couldn't before?
 -- There are two opportunities that should stand out!
-
+-- We can show everything on it or fill it with `mempty`
 
 
 
@@ -89,8 +93,8 @@ data HList (xs :: [Type]) where
 
 -- | We typically define foldMap like this:
 
-foldMap :: Monoid m => (a -> m) -> [a] -> m
-foldMap f = foldr (\x acc -> f x <> acc) mempty
+foldMap' :: Monoid m => (a -> m) -> [a] -> m
+foldMap' f = foldr (\x acc -> f x <> acc) mempty
 
 -- | c. What constraint do we need in order to use our @(a -> m)@ function on
 -- an @HList@? You may need to look into the __equality constraint__ introduced
